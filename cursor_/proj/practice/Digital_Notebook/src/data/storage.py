@@ -25,7 +25,7 @@ class NotebookRecord(Base):
     name = Column(String, nullable=False)
     created_at = Column(DateTime, nullable=False)
     updated_at = Column(DateTime, nullable=False)
-    notebook_metadata = Column(Text, nullable=False)  # JSON serialized
+    metadata = Column(Text, nullable=False)  # JSON serialized
 
 
 class PageRecord(Base):
@@ -39,7 +39,7 @@ class PageRecord(Base):
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, nullable=False)
     updated_at = Column(DateTime, nullable=False)
-    notebook_metadata = Column(Text, nullable=False)  # JSON serialized
+    metadata = Column(Text, nullable=False)  # JSON serialized
 
 
 class NotebookStorage:
@@ -99,7 +99,7 @@ class NotebookStorage:
             notebook_record.name = notebook.name
             notebook_record.created_at = notebook.created_at
             notebook_record.updated_at = notebook.updated_at
-            notebook_record.notebook_metadata = json.dumps(notebook.notebook_metadata)
+            notebook_record.metadata = json.dumps(notebook.metadata)
             
             # Add or update the notebook record
             session.add(notebook_record)
@@ -116,7 +116,7 @@ class NotebookStorage:
                     content=page.content,
                     created_at=page.created_at,
                     updated_at=page.updated_at,
-                    notebook_metadata=json.dumps(page.notebook_metadata)
+                    metadata=json.dumps(page.metadata)
                 )
                 session.add(page_record)
             
@@ -155,7 +155,7 @@ class NotebookStorage:
             notebook = Notebook(name=notebook_record.name)
             notebook.created_at = notebook_record.created_at
             notebook.updated_at = notebook_record.updated_at
-            notebook.notebook_metadata = json.loads(notebook_record.notebook_metadata)
+            notebook.metadata = json.loads(notebook_record.metadata)
             
             # Load all pages
             page_records = session.query(PageRecord).filter_by(notebook_id=1).all()
@@ -169,7 +169,7 @@ class NotebookStorage:
                 )
                 page.created_at = page_record.created_at
                 page.updated_at = page_record.updated_at
-                page.notebook_metadata = json.loads(page_record.notebook_metadata)
+                page.metadata = json.loads(page_record.metadata)
                 
                 notebook.pages[page.page_id] = page
             
