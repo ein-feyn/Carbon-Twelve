@@ -39,7 +39,7 @@ class PageRecord(Base):
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, nullable=False)
     updated_at = Column(DateTime, nullable=False)
-    metadata = Column(Text, nullable=False)  # JSON serialized
+    page_metadata = Column(Text, nullable=False)  # JSON serialized
 
 
 class NotebookStorage:
@@ -116,7 +116,7 @@ class NotebookStorage:
                     content=page.content,
                     created_at=page.created_at,
                     updated_at=page.updated_at,
-                    metadata=json.dumps(page.metadata)
+                    page_metadata=json.dumps(page.metadata)
                 )
                 session.add(page_record)
             
@@ -169,7 +169,7 @@ class NotebookStorage:
                 )
                 page.created_at = page_record.created_at
                 page.updated_at = page_record.updated_at
-                page.metadata = json.loads(page_record.metadata)
+                page.metadata = json.loads(page_record.page_metadata)
                 
                 notebook.pages[page.page_id] = page
             
