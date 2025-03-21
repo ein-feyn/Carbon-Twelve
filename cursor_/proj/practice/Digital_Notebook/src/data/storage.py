@@ -74,7 +74,7 @@ class NotebookStorage:
     def _initialize_db(self, db_path: str) -> None:
         """Initialize the database schema."""
         engine = create_engine(f"sqlite:///{db_path}")
-        Base.notebook_metadata.create_all(engine)
+        Base.metadata.create_all(engine)
     
     def save_notebook(self, notebook: Notebook) -> None:
         """
