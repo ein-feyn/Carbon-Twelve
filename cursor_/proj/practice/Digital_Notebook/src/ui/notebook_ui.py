@@ -223,44 +223,89 @@ class NotebookUI(QMainWindow):
     
     def open_notebook(self):
         """Open an existing notebook."""
-        # Get available notebooks
-        notebooks = self.storage.list_notebooks()
+        # Get available notebooks from default storage
+        default_notebooks = self.storage.list_notebooks()
         
-        if not notebooks:
-            QMessageBox.information(self, "No Notebooks", "No notebooks found in the storage directory.")
+        # Get custom locations from config (we'll need to implement this in the Config class)
+        custom_notebooks = self.config.get_recent_notebook_locations() if hasattr(self.config, 'get_recent_notebook_locations') else {}
+        
+        if not default_notebooks and not custom_notebooks:
+            QMessageBox.information(self, "No Notebooks", "No notebooks found in the storage directory or recent custom locations.")
             return
         
         # Create a dialog for selecting a notebook
         dialog = QDialog(self)
         dialog.setWindowTitle("Open Notebook")
-        dialog.setMinimumWidth(400)
+        dialog.setMinimumWidth(500)
         layout = QVBoxLayout(dialog)
         
         layout.addWidget(QLabel("Select a notebook to open:"))
+        
         notebook_list = QListWidget()
-        for name in notebooks.keys():
-            notebook_list.addItem(name)
+        
+        # Add notebooks from default directory
+        if default_notebooks:
+            default_category = QListWidgetItem("Default Storage:")
+            default_category.setFlags(Qt.ItemFlag.NoItemFlags)
+            default_category.setBackground(Qt.GlobalColor.lightGray)
+            notebook_list.addItem(default_category)
+            
+            for name, path in default_notebooks.items():
+                item = QListWidgetItem(f"  {name}")
+                item.setData(Qt.ItemDataRole.UserRole, path)
+                notebook_list.addItem(item)
+        
+        # Add notebooks from custom locations
+        if custom_notebooks:
+            custom_category = QListWidgetItem("Custom Locations:")
+            custom_category.setFlags(Qt.ItemFlag.NoItemFlags)
+            custom_category.setBackground(Qt.GlobalColor.lightGray)
+            notebook_list.addItem(custom_category)
+            
+            for path, name in custom_notebooks.items():
+                item = QListWidgetItem(f"  {name} ({os.path.dirname(path)})")
+                item.setData(Qt.ItemDataRole.UserRole, path)
+                notebook_list.addItem(item)
+        
         layout.addWidget(notebook_list)
         
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Open | QDialogButtonBox.StandardButton.Cancel
-        )
+        # Add a button to browse for notebooks
+        browse_button = QPushButton("Browse for Notebook...")
+        browse_button.clicked.connect(lambda: dialog.done(2))  # Use a special return code
+        
+        buttons = QDialogButtonBox()
+        buttons.addButton(QDialogButtonBox.StandardButton.Open)
+        buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
+        buttons.addButton(browse_button, QDialogButtonBox.ButtonRole.ActionRole)
+        
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
         
-        if dialog.exec() == QDialog.DialogCode.Accepted:
+        result = dialog.exec()
+        
+        if result == 1:  # QDialog.DialogCode.Accepted
             selected = notebook_list.currentItem()
-            if selected:
-                notebook_name = selected.text()
-                self.notebook = self.storage.load_notebook(notebook_name)
-                if self.notebook:
-                    self.search_engine.set_notebook(self.notebook)
-                    self.update_pages_list()
-                    self.status_bar.showMessage(f"Opened notebook: {notebook_name}")
-                    self.setWindowTitle(f"Digital Notebook - {notebook_name}")
-                else:
-                    QMessageBox.critical(self, "Error", f"Failed to load notebook: {notebook_name}")
+            if selected and selected.data(Qt.ItemDataRole.UserRole):
+                notebook_path = selected.data(Qt.ItemDataRole.UserRole)
+                try:
+                    # Load the notebook from the path
+                    self.notebook = self.storage.load_notebook_from_file(notebook_path)
+                    if self.notebook:
+                        # Store this path in recent notebooks if it's a custom location
+                        if notebook_path not in default_notebooks.values():
+                            self.config.add_recent_notebook_location(notebook_path, self.notebook.name)
+                        
+                        self.search_engine.set_notebook(self.notebook)
+                        self.update_pages_list()
+                        self.status_bar.showMessage(f"Opened notebook: {self.notebook.name}")
+                        self.setWindowTitle(f"Digital Notebook - {self.notebook.name}")
+                    else:
+                        QMessageBox.critical(self, "Error", f"Failed to load notebook from: {notebook_path}")
+                except Exception as e:
+                    QMessageBox.critical(self, "Error", f"Failed to load notebook: {str(e)}")
+        elif result == 2:  # Browse button clicked
+            self.open_notebook_from_file()
     
     def open_notebook_from_file(self):
         """Open a notebook from a specific file."""
@@ -278,6 +323,11 @@ class NotebookUI(QMainWindow):
                 self.notebook = self.storage.load_notebook_from_file(file_path)
                 
                 if self.notebook:
+                    # Add to recent notebooks list if it's not in the default directory
+                    default_dir = self.config.get_default_storage_dir()
+                    if os.path.dirname(file_path) != default_dir:
+                        self.config.add_recent_notebook_location(file_path, self.notebook.name)
+                    
                     # Update the UI
                     self.search_engine.set_notebook(self.notebook)
                     self.update_pages_list()
@@ -336,6 +386,12 @@ class NotebookUI(QMainWindow):
                 
                 # Save the notebook to the selected directory
                 file_path = self.storage.save_notebook_as(self.notebook, directory, new_name)
+                
+                # Add to recent notebooks list if it's not in the default directory
+                default_dir = self.config.get_default_storage_dir()
+                saved_name = new_name if new_name else self.notebook.name
+                if os.path.dirname(file_path) != default_dir:
+                    self.config.add_recent_notebook_location(file_path, saved_name)
                 
                 # Ask if user wants to set this as the default directory
                 set_default = QMessageBox.question(

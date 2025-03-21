@@ -6,6 +6,7 @@ This module provides functionality for saving and loading user preferences.
 import json
 import os
 from pathlib import Path
+from typing import Dict
 
 
 class Config:
@@ -15,6 +16,9 @@ class Config:
     This class provides methods for saving and loading user preferences,
     such as the default storage location for notebooks.
     """
+    
+    # Maximum number of recent notebooks to track
+    MAX_RECENT_NOTEBOOKS = 10
     
     def __init__(self, config_file: str = None):
         """
@@ -96,4 +100,52 @@ class Config:
         Args:
             directory: The directory to use for storing notebooks
         """
-        self.set('storage_dir', directory) 
+        self.set('storage_dir', directory)
+    
+    def get_recent_notebook_locations(self) -> Dict[str, str]:
+        """
+        Get the list of recent notebook locations.
+        
+        Returns:
+            Dictionary mapping notebook file paths to notebook names
+        """
+        return self.get('recent_notebooks', {})
+    
+    def add_recent_notebook_location(self, file_path: str, notebook_name: str) -> None:
+        """
+        Add a notebook file path to the recent notebooks list.
+        
+        This maintains the list of recent notebooks up to MAX_RECENT_NOTEBOOKS.
+        
+        Args:
+            file_path: The full path to the notebook file
+            notebook_name: The name of the notebook
+        """
+        recent_notebooks = self.get_recent_notebook_locations()
+        
+        # Add or update the notebook in the dictionary
+        recent_notebooks[file_path] = notebook_name
+        
+        # If we have more than the maximum number, remove the oldest ones
+        if len(recent_notebooks) > self.MAX_RECENT_NOTEBOOKS:
+            # Convert to a list of (path, name) tuples
+            paths = list(recent_notebooks.items())
+            # Keep only the most recent ones
+            paths = paths[-self.MAX_RECENT_NOTEBOOKS:]
+            # Convert back to dictionary
+            recent_notebooks = dict(paths)
+        
+        # Save the updated list
+        self.set('recent_notebooks', recent_notebooks)
+    
+    def remove_recent_notebook_location(self, file_path: str) -> None:
+        """
+        Remove a notebook file path from the recent notebooks list.
+        
+        Args:
+            file_path: The full path to the notebook file to remove
+        """
+        recent_notebooks = self.get_recent_notebook_locations()
+        if file_path in recent_notebooks:
+            del recent_notebooks[file_path]
+            self.set('recent_notebooks', recent_notebooks) 
