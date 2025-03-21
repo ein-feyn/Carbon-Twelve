@@ -48,6 +48,9 @@ class NotebookUI(QMainWindow):
         # Track the current page
         self.current_page: Optional[Page] = None
         
+        # Track the current notebook file path
+        self.current_notebook_path: Optional[str] = None
+        
         # Set up the UI
         self.init_ui()
     
@@ -216,6 +219,9 @@ class NotebookUI(QMainWindow):
             self.notebook = Notebook(name=name)
             self.search_engine.set_notebook(self.notebook)
             
+            # Reset the current notebook path since this is a new notebook
+            self.current_notebook_path = None
+            
             # Update the UI
             self.update_pages_list()
             self.status_bar.showMessage(f"Created new notebook: {name}")
@@ -292,6 +298,9 @@ class NotebookUI(QMainWindow):
                     # Load the notebook from the path
                     self.notebook = self.storage.load_notebook_from_file(notebook_path)
                     if self.notebook:
+                        # Set the current notebook path
+                        self.current_notebook_path = notebook_path
+                        
                         # Store this path in recent notebooks if it's a custom location
                         if notebook_path not in default_notebooks.values():
                             self.config.add_recent_notebook_location(notebook_path, self.notebook.name)
@@ -323,6 +332,9 @@ class NotebookUI(QMainWindow):
                 self.notebook = self.storage.load_notebook_from_file(file_path)
                 
                 if self.notebook:
+                    # Set the current notebook path
+                    self.current_notebook_path = file_path
+                    
                     # Add to recent notebooks list if it's not in the default directory
                     default_dir = self.config.get_default_storage_dir()
                     if os.path.dirname(file_path) != default_dir:
@@ -345,8 +357,15 @@ class NotebookUI(QMainWindow):
             return
         
         try:
-            self.storage.save_notebook(self.notebook)
-            self.status_bar.showMessage(f"Saved notebook: {self.notebook.name}")
+            # If we have a current notebook path, save to that location instead of default
+            if self.current_notebook_path and os.path.exists(os.path.dirname(self.current_notebook_path)):
+                directory = os.path.dirname(self.current_notebook_path)
+                self.storage.save_notebook_as(self.notebook, directory)
+                self.status_bar.showMessage(f"Saved notebook to: {self.current_notebook_path}")
+            else:
+                # Otherwise save to the default location
+                self.storage.save_notebook(self.notebook)
+                self.status_bar.showMessage(f"Saved notebook: {self.notebook.name}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save notebook: {str(e)}")
     
@@ -386,6 +405,9 @@ class NotebookUI(QMainWindow):
                 
                 # Save the notebook to the selected directory
                 file_path = self.storage.save_notebook_as(self.notebook, directory, new_name)
+                
+                # Update the current notebook path
+                self.current_notebook_path = file_path
                 
                 # Add to recent notebooks list if it's not in the default directory
                 default_dir = self.config.get_default_storage_dir()
