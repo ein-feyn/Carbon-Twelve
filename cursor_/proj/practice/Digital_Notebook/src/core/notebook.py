@@ -28,7 +28,7 @@ class Notebook:
         self.created_at = datetime.datetime.now()
         self.updated_at = self.created_at
         self.pages: Dict[int, Page] = {}
-        self.metadata = {}
+        self.notebook_metadata = {}
     
     def create_page(self, name: Optional[str] = None, content: str = "") -> Page:
         """
@@ -122,12 +122,12 @@ class Notebook:
     
     def set_metadata(self, key: str, value: Any) -> None:
         """Set a metadata value for the notebook."""
-        self.metadata[key] = value
+        self.notebook_metadata[key] = value
         self.updated_at = datetime.datetime.now()
     
     def get_metadata(self, key: str) -> Any:
         """Get a metadata value for the notebook."""
-        return self.metadata.get(key)
+        return self.notebook_metadata.get(key)
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert the notebook to a dictionary for serialization."""
@@ -137,7 +137,7 @@ class Notebook:
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
             "pages": {str(pid): page.to_dict() for pid, page in self.pages.items()},
-            "metadata": self.metadata
+            "metadata": self.notebook_metadata
         }
     
     @classmethod
@@ -149,7 +149,7 @@ class Notebook:
         )
         notebook.created_at = datetime.datetime.fromisoformat(data["created_at"])
         notebook.updated_at = datetime.datetime.fromisoformat(data["updated_at"])
-        notebook.metadata = data["metadata"]
+        notebook.notebook_metadata = data["metadata"]
         
         # Restore pages
         for pid_str, page_data in data["pages"].items():

@@ -99,7 +99,7 @@ class NotebookStorage:
             notebook_record.name = notebook.name
             notebook_record.created_at = notebook.created_at
             notebook_record.updated_at = notebook.updated_at
-            notebook_record.notebook_metadata = json.dumps(notebook.metadata)
+            notebook_record.notebook_metadata = json.dumps(notebook.notebook_metadata)
             
             # Add or update the notebook record
             session.add(notebook_record)
@@ -116,14 +116,14 @@ class NotebookStorage:
                     content=page.content,
                     created_at=page.created_at,
                     updated_at=page.updated_at,
-                    page_metadata=json.dumps(page.metadata)
+                    page_metadata=json.dumps(page.page_metadata)
                 )
                 session.add(page_record)
             
             session.commit()
-        except:
+        except Exception as e:
             session.rollback()
-            raise
+            raise Exception(f"Failed to save notebook: {str(e)}")
         finally:
             session.close()
     
@@ -155,7 +155,7 @@ class NotebookStorage:
             notebook = Notebook(name=notebook_record.name)
             notebook.created_at = notebook_record.created_at
             notebook.updated_at = notebook_record.updated_at
-            notebook.metadata = json.loads(notebook_record.notebook_metadata)
+            notebook.notebook_metadata = json.loads(notebook_record.notebook_metadata)
             
             # Load all pages
             page_records = session.query(PageRecord).filter_by(notebook_id=1).all()
@@ -169,12 +169,13 @@ class NotebookStorage:
                 )
                 page.created_at = page_record.created_at
                 page.updated_at = page_record.updated_at
-                page.metadata = json.loads(page_record.page_metadata)
+                page.page_metadata = json.loads(page_record.page_metadata)
                 
                 notebook.pages[page.page_id] = page
             
             return notebook
-        except:
+        except Exception as e:
+            print(f"Error loading notebook: {str(e)}")
             return None
         finally:
             session.close()

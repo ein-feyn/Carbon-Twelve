@@ -28,7 +28,7 @@ class Page:
         self.content = content
         self.created_at = datetime.datetime.now()
         self.updated_at = self.created_at
-        self.metadata = {}
+        self.page_metadata = {}
     
     def update_content(self, content: str) -> None:
         """Update the page content and update timestamp."""
@@ -42,12 +42,12 @@ class Page:
     
     def set_metadata(self, key: str, value: Any) -> None:
         """Set a metadata value for the page."""
-        self.metadata[key] = value
+        self.page_metadata[key] = value
         self.updated_at = datetime.datetime.now()
     
     def get_metadata(self, key: str) -> Any:
         """Get a metadata value for the page."""
-        return self.metadata.get(key)
+        return self.page_metadata.get(key)
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert the page to a dictionary for serialization."""
@@ -57,7 +57,7 @@ class Page:
             "content": self.content,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
-            "metadata": self.metadata
+            "metadata": self.page_metadata
         }
     
     @classmethod
@@ -70,5 +70,5 @@ class Page:
         )
         page.created_at = datetime.datetime.fromisoformat(data["created_at"])
         page.updated_at = datetime.datetime.fromisoformat(data["updated_at"])
-        page.metadata = data["metadata"]
+        page.page_metadata = data["metadata"]
         return page
