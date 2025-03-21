@@ -4,13 +4,15 @@ Notebook UI module for the Digital Notebook.
 This module provides the main user interface for the Digital Notebook application.
 """
 import sys
+import os
 from typing import Optional, Dict, List, Any
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTabWidget, QLabel, QLineEdit, QPushButton, QTextEdit,
     QSplitter, QListWidget, QListWidgetItem, QMenu, QMessageBox,
-    QDialog, QDialogButtonBox, QFormLayout, QStatusBar
+    QDialog, QDialogButtonBox, QFormLayout, QStatusBar,
+    QFileDialog
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QAction, QIcon, QTextCursor
@@ -19,6 +21,7 @@ from src.core.notebook import Notebook
 from src.core.page import Page
 from src.data.storage import NotebookStorage
 from src.utils.search import SearchEngine, SearchResult
+from src.utils.config import Config
 from .page_view import PageView
 
 
@@ -33,8 +36,12 @@ class NotebookUI(QMainWindow):
         """Initialize the notebook UI."""
         super().__init__()
         
-        # Initialize the notebook and storage
-        self.storage = NotebookStorage()
+        # Initialize the config
+        self.config = Config()
+        
+        # Initialize the notebook and storage with the configured storage directory
+        storage_dir = self.config.get_default_storage_dir()
+        self.storage = NotebookStorage(storage_dir)
         self.notebook: Optional[Notebook] = None
         self.search_engine = SearchEngine()
         
@@ -74,7 +81,7 @@ class NotebookUI(QMainWindow):
         # Set up the status bar
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        self.status_bar.showMessage("Ready")
+        self.status_bar.showMessage(f"Storage directory: {self.storage.get_storage_directory()}")
         
         # Set the initial size ratio between sidebar and content
         self.main_splitter.setSizes([300, 900])
@@ -94,9 +101,25 @@ class NotebookUI(QMainWindow):
         open_notebook_action.triggered.connect(self.open_notebook)
         file_menu.addAction(open_notebook_action)
         
+        open_notebook_from_file_action = QAction("Open Notebook from &File...", self)
+        open_notebook_from_file_action.triggered.connect(self.open_notebook_from_file)
+        file_menu.addAction(open_notebook_from_file_action)
+        
+        file_menu.addSeparator()
+        
         save_notebook_action = QAction("&Save Notebook", self)
         save_notebook_action.triggered.connect(self.save_notebook)
         file_menu.addAction(save_notebook_action)
+        
+        save_notebook_as_action = QAction("Save Notebook &As...", self)
+        save_notebook_as_action.triggered.connect(self.save_notebook_as)
+        file_menu.addAction(save_notebook_as_action)
+        
+        file_menu.addSeparator()
+        
+        set_storage_dir_action = QAction("Set Default Storage &Directory...", self)
+        set_storage_dir_action.triggered.connect(self.set_default_storage_directory)
+        file_menu.addAction(set_storage_dir_action)
         
         file_menu.addSeparator()
         
@@ -154,8 +177,6 @@ class NotebookUI(QMainWindow):
         save_action.triggered.connect(self.save_notebook)
         toolbar.addAction(save_action)
         
-        toolbar.addSeparator()
-        
         search_action = QAction("Search", self)
         search_action.triggered.connect(self.show_search)
         toolbar.addAction(search_action)
@@ -164,41 +185,32 @@ class NotebookUI(QMainWindow):
         """Create the sidebar for page navigation."""
         self.sidebar = QWidget()
         sidebar_layout = QVBoxLayout(self.sidebar)
-        sidebar_layout.setContentsMargins(0, 0, 0, 0)
         
-        # Add label for pages list
-        sidebar_layout.addWidget(QLabel("Pages"))
-        
-        # Create the pages list
+        # Pages list
+        sidebar_layout.addWidget(QLabel("Pages:"))
         self.pages_list = QListWidget()
         self.pages_list.itemClicked.connect(self.on_page_selected)
         sidebar_layout.addWidget(self.pages_list)
         
-        # Add button for creating new pages
+        # New page button
         new_page_button = QPushButton("New Page")
         new_page_button.clicked.connect(self.create_new_page)
         sidebar_layout.addWidget(new_page_button)
         
-        # Add the sidebar to the main splitter
         self.main_splitter.addWidget(self.sidebar)
     
     def create_content_area(self):
-        """Create the main content area."""
-        self.content_area = QWidget()
-        content_layout = QVBoxLayout(self.content_area)
-        
-        # Create the page view
+        """Create the content area for displaying and editing pages."""
         self.page_view = PageView()
         self.page_view.content_changed.connect(self.on_page_content_changed)
-        content_layout.addWidget(self.page_view)
         
-        # Add the content area to the main splitter
-        self.main_splitter.addWidget(self.content_area)
+        self.main_splitter.addWidget(self.page_view)
     
     def create_new_notebook(self):
         """Create a new notebook."""
         # Prompt for notebook name
-        name, ok = self.prompt_for_text("New Notebook", "Enter a name for the new notebook:")
+        name, ok = self.prompt_for_text("New Notebook", "Enter a name for the new notebook:", 
+                                        initial_text="My Notebook")
         if ok and name:
             # Create the notebook
             self.notebook = Notebook(name=name)
@@ -206,47 +218,75 @@ class NotebookUI(QMainWindow):
             
             # Update the UI
             self.update_pages_list()
-            self.setWindowTitle(f"Digital Notebook - {name}")
             self.status_bar.showMessage(f"Created new notebook: {name}")
+            self.setWindowTitle(f"Digital Notebook - {name}")
     
     def open_notebook(self):
         """Open an existing notebook."""
-        # Get list of available notebooks
+        # Get available notebooks
         notebooks = self.storage.list_notebooks()
         
         if not notebooks:
-            QMessageBox.information(self, "No Notebooks", "No notebooks found.")
+            QMessageBox.information(self, "No Notebooks", "No notebooks found in the storage directory.")
             return
         
-        # Create a simple dialog to select a notebook
+        # Create a dialog for selecting a notebook
         dialog = QDialog(self)
         dialog.setWindowTitle("Open Notebook")
+        dialog.setMinimumWidth(400)
         layout = QVBoxLayout(dialog)
         
-        notebook_list = QListWidget()
-        for name in notebooks:
-            notebook_list.addItem(name)
-        
         layout.addWidget(QLabel("Select a notebook to open:"))
+        notebook_list = QListWidget()
+        for name in notebooks.keys():
+            notebook_list.addItem(name)
         layout.addWidget(notebook_list)
         
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Open | QDialogButtonBox.StandardButton.Cancel
+        )
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
         
-        # Show the dialog and process the result
-        if dialog.exec() == QDialog.DialogCode.Accepted and notebook_list.currentItem():
-            notebook_name = notebook_list.currentItem().text()
-            self.notebook = self.storage.load_notebook(notebook_name)
-            
-            if self.notebook:
-                self.search_engine.set_notebook(self.notebook)
-                self.update_pages_list()
-                self.setWindowTitle(f"Digital Notebook - {self.notebook.name}")
-                self.status_bar.showMessage(f"Opened notebook: {self.notebook.name}")
-            else:
-                QMessageBox.critical(self, "Error", f"Failed to open notebook: {notebook_name}")
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            selected = notebook_list.currentItem()
+            if selected:
+                notebook_name = selected.text()
+                self.notebook = self.storage.load_notebook(notebook_name)
+                if self.notebook:
+                    self.search_engine.set_notebook(self.notebook)
+                    self.update_pages_list()
+                    self.status_bar.showMessage(f"Opened notebook: {notebook_name}")
+                    self.setWindowTitle(f"Digital Notebook - {notebook_name}")
+                else:
+                    QMessageBox.critical(self, "Error", f"Failed to load notebook: {notebook_name}")
+    
+    def open_notebook_from_file(self):
+        """Open a notebook from a specific file."""
+        # Show file dialog to select a notebook file
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open Notebook File",
+            os.path.expanduser("~"),
+            "Notebook Files (*.db);;All Files (*)"
+        )
+        
+        if file_path:
+            try:
+                # Load the notebook from the selected file
+                self.notebook = self.storage.load_notebook_from_file(file_path)
+                
+                if self.notebook:
+                    # Update the UI
+                    self.search_engine.set_notebook(self.notebook)
+                    self.update_pages_list()
+                    self.status_bar.showMessage(f"Opened notebook from file: {file_path}")
+                    self.setWindowTitle(f"Digital Notebook - {self.notebook.name}")
+                else:
+                    QMessageBox.critical(self, "Error", f"Failed to load notebook from file: {file_path}")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to load notebook: {str(e)}")
     
     def save_notebook(self):
         """Save the current notebook."""
@@ -259,6 +299,97 @@ class NotebookUI(QMainWindow):
             self.status_bar.showMessage(f"Saved notebook: {self.notebook.name}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save notebook: {str(e)}")
+    
+    def save_notebook_as(self):
+        """Save the current notebook to a specific location."""
+        if not self.notebook:
+            QMessageBox.warning(self, "No Notebook", "No notebook is currently open.")
+            return
+        
+        # Show directory selection dialog
+        directory = QFileDialog.getExistingDirectory(
+            self,
+            "Select Directory to Save Notebook",
+            os.path.expanduser("~"),
+            QFileDialog.Option.ShowDirsOnly
+        )
+        
+        if directory:
+            try:
+                # Optionally prompt for a new name
+                new_name = None
+                change_name, ok = QMessageBox.question(
+                    self,
+                    "Change Name",
+                    "Would you like to save the notebook with a different name?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                
+                if change_name == QMessageBox.StandardButton.Yes:
+                    new_name, ok = self.prompt_for_text(
+                        "New Name",
+                        "Enter a new name for the notebook:",
+                        initial_text=self.notebook.name
+                    )
+                    if not ok or not new_name:
+                        new_name = None
+                
+                # Save the notebook to the selected directory
+                file_path = self.storage.save_notebook_as(self.notebook, directory, new_name)
+                
+                # Ask if user wants to set this as the default directory
+                set_default, ok = QMessageBox.question(
+                    self,
+                    "Set Default Directory",
+                    "Would you like to set this as the default storage directory?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                
+                if set_default == QMessageBox.StandardButton.Yes:
+                    self.config.set_default_storage_dir(directory)
+                    self.storage.set_storage_directory(directory)
+                    self.status_bar.showMessage(f"Default storage directory set to: {directory}")
+                
+                QMessageBox.information(self, "Success", f"Notebook saved to: {file_path}")
+                
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to save notebook: {str(e)}")
+    
+    def set_default_storage_directory(self):
+        """Set the default storage directory for notebooks."""
+        # Show directory selection dialog
+        directory = QFileDialog.getExistingDirectory(
+            self,
+            "Select Default Storage Directory",
+            self.storage.get_storage_directory(),
+            QFileDialog.Option.ShowDirsOnly
+        )
+        
+        if directory:
+            try:
+                # Set the new storage directory
+                self.storage.set_storage_directory(directory)
+                self.config.set_default_storage_dir(directory)
+                self.status_bar.showMessage(f"Default storage directory set to: {directory}")
+                
+                # Ask if user wants to move existing notebooks
+                move_notebooks, ok = QMessageBox.question(
+                    self,
+                    "Move Notebooks",
+                    "Would you like to move your existing notebooks to the new directory?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                
+                if move_notebooks == QMessageBox.StandardButton.Yes:
+                    # This would require implementing a function to move notebooks
+                    # For now, just inform the user this isn't implemented
+                    QMessageBox.information(
+                        self,
+                        "Not Implemented",
+                        "Moving notebooks is not implemented yet. You'll need to manually copy your notebooks to the new location."
+                    )
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to set storage directory: {str(e)}")
     
     def create_new_page(self):
         """Create a new page in the notebook."""
@@ -355,33 +486,35 @@ class NotebookUI(QMainWindow):
         layout.addWidget(results_list)
         
         # Close button
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        buttons.rejected.connect(dialog.reject)
-        layout.addWidget(buttons)
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.close)
+        layout.addWidget(close_button)
         
-        # Connect search functionality
+        # Connect the search functionality
         def perform_search():
-            query = search_input.text()
+            query = search_input.text().strip()
             if not query:
                 return
             
+            # Clear previous results
+            results_list.clear()
+            
             # Perform the search
-            search_results = self.search_engine.advanced_search(query)
+            search_results = self.search_engine.basic_search(query)
             
             # Display results
-            results_list.clear()
             for result in search_results:
-                item = QListWidgetItem(f"{result.page.name}: {result.content_snippet}")
+                item = QListWidgetItem(f"{result.page.name} - {result.match_count} matches")
                 item.setData(Qt.ItemDataRole.UserRole, result.page.page_id)
                 results_list.addItem(item)
         
         search_button.clicked.connect(perform_search)
         search_input.returnPressed.connect(perform_search)
         
-        # Handle result selection
+        # Connect result selection
         def on_result_selected(item):
             page_id = item.data(Qt.ItemDataRole.UserRole)
-            dialog.accept()
+            dialog.close()
             self.select_page(page_id)
         
         results_list.itemDoubleClicked.connect(on_result_selected)
@@ -390,42 +523,54 @@ class NotebookUI(QMainWindow):
         dialog.exec()
     
     def show_word_count_analysis(self):
-        """Show word count analysis for the current page."""
-        if not self.current_page:
-            QMessageBox.warning(self, "No Page Selected", "Please select a page to analyze.")
+        """Show word count analysis for the notebook."""
+        if not self.notebook:
+            QMessageBox.warning(self, "No Notebook", "Please create or open a notebook first.")
             return
         
-        # For now, just show a simple message with the word count
-        # In a real implementation, this would show visualizations
-        from src.analysis.word_counter import WordCounter
-        word_counter = WordCounter()
-        count = word_counter.count_words(self.current_page.content)
+        # For now, just show basic word count stats
+        total_words = 0
+        page_counts = {}
         
-        QMessageBox.information(
-            self, "Word Count Analysis", 
-            f"The page '{self.current_page.name}' contains {count} words.\n\n"
-            f"Word count analysis visualizations will be implemented in a future update."
-        )
+        for page_id, page in self.notebook.pages.items():
+            words = len(page.content.split())
+            total_words += words
+            page_counts[page.name] = words
+        
+        # Create a dialog to display the results
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Word Count Analysis")
+        dialog.setMinimumWidth(400)
+        layout = QVBoxLayout(dialog)
+        
+        layout.addWidget(QLabel(f"Total Words: {total_words}"))
+        layout.addWidget(QLabel("Words per Page:"))
+        
+        for name, count in page_counts.items():
+            layout.addWidget(QLabel(f"{name}: {count} words"))
+        
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.close)
+        layout.addWidget(close_button)
+        
+        dialog.exec()
     
     def update_pages_list(self):
         """Update the list of pages in the sidebar."""
         self.pages_list.clear()
-        
-        if not self.notebook:
-            return
-        
-        for page in self.notebook.list_pages():
-            item = QListWidgetItem(page.name)
-            item.setData(Qt.ItemDataRole.UserRole, page.page_id)
-            self.pages_list.addItem(item)
+        if self.notebook:
+            for page in self.notebook.list_pages():
+                item = QListWidgetItem(page.name)
+                item.setData(Qt.ItemDataRole.UserRole, page.page_id)
+                self.pages_list.addItem(item)
     
     def on_page_selected(self, item):
-        """Handle selection of a page in the sidebar."""
+        """Handle selection of a page in the list."""
         page_id = item.data(Qt.ItemDataRole.UserRole)
         self.select_page(page_id)
     
     def select_page(self, page_id):
-        """Select and display a page by its ID."""
+        """Select and display a page."""
         if not self.notebook:
             return
         
@@ -434,11 +579,11 @@ class NotebookUI(QMainWindow):
             page = self.notebook.get_page(page_id)
             self.current_page = page
             
-            # Update the page view
+            # Display the page in the page view
             self.page_view.set_page(page)
             
             # Update the status bar
-            self.status_bar.showMessage(f"Current page: {page.name}")
+            self.status_bar.showMessage(f"Page: {page.name}")
             
             # Select the page in the list
             for i in range(self.pages_list.count()):
@@ -447,7 +592,7 @@ class NotebookUI(QMainWindow):
                     self.pages_list.setCurrentItem(item)
                     break
         except KeyError:
-            QMessageBox.warning(self, "Error", f"Page with ID {page_id} not found.")
+            QMessageBox.warning(self, "Error", f"Could not find page with ID {page_id}")
     
     def on_page_content_changed(self, content):
         """Handle changes to the page content."""
@@ -455,26 +600,25 @@ class NotebookUI(QMainWindow):
             self.current_page.update_content(content)
     
     def prompt_for_text(self, title, message, initial_text=""):
-        """
-        Prompt the user for text input.
-        
-        Returns:
-            Tuple of (text, ok) where ok is True if the user clicked OK
-        """
+        """Show a dialog to prompt for text input."""
         dialog = QDialog(self)
         dialog.setWindowTitle(title)
         layout = QFormLayout(dialog)
         
-        text_input = QLineEdit(initial_text)
-        layout.addRow(message, text_input)
+        # Input field
+        input_field = QLineEdit(initial_text)
+        layout.addRow(message, input_field)
         
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        # Buttons
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
         
         result = dialog.exec()
-        return text_input.text(), result == QDialog.DialogCode.Accepted
+        return input_field.text().strip(), result == QDialog.DialogCode.Accepted
 
 
 def run_application():

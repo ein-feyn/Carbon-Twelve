@@ -65,6 +65,41 @@ class NotebookStorage:
         # Ensure the storage directory exists
         os.makedirs(self.storage_dir, exist_ok=True)
     
+    def set_storage_directory(self, directory: str) -> None:
+        """
+        Set the directory where notebooks will be stored.
+        
+        Args:
+            directory: Path to the directory for storing notebooks
+            
+        Raises:
+            ValueError: If the directory is not valid
+        """
+        if not directory:
+            raise ValueError("Storage directory cannot be empty")
+        
+        # If the directory doesn't exist, create it
+        if not os.path.exists(directory):
+            try:
+                os.makedirs(directory, exist_ok=True)
+            except OSError as e:
+                raise ValueError(f"Could not create storage directory: {str(e)}")
+        
+        # Check if the directory is writable
+        if not os.access(directory, os.W_OK):
+            raise ValueError(f"Storage directory is not writable: {directory}")
+        
+        self.storage_dir = directory
+    
+    def get_storage_directory(self) -> str:
+        """
+        Get the current storage directory.
+        
+        Returns:
+            The current storage directory path
+        """
+        return self.storage_dir
+    
     def _get_db_path(self, notebook_name: str) -> str:
         """Get the database file path for a notebook."""
         # Sanitize the notebook name for use in a filename
@@ -127,6 +162,49 @@ class NotebookStorage:
         finally:
             session.close()
     
+    def save_notebook_as(self, notebook: Notebook, directory: str, new_name: Optional[str] = None) -> str:
+        """
+        Save a notebook to a specific directory, optionally with a new name.
+        
+        Args:
+            notebook: The notebook to save
+            directory: Directory where the notebook should be saved
+            new_name: Optional new name for the notebook
+            
+        Returns:
+            The path to the saved notebook file
+            
+        Raises:
+            ValueError: If the directory is invalid
+        """
+        # Remember the original storage directory
+        original_dir = self.storage_dir
+        
+        try:
+            # Set the new storage directory
+            self.set_storage_directory(directory)
+            
+            # If a new name is provided, temporarily rename the notebook
+            original_name = None
+            if new_name:
+                original_name = notebook.name
+                notebook.name = new_name
+            
+            # Save the notebook
+            self.save_notebook(notebook)
+            
+            # Get the path to the saved file
+            db_path = self._get_db_path(notebook.name)
+            
+            # Restore the original name if it was changed
+            if original_name:
+                notebook.name = original_name
+                
+            return db_path
+        finally:
+            # Restore the original storage directory
+            self.storage_dir = original_dir
+    
     def load_notebook(self, notebook_name: str) -> Optional[Notebook]:
         """
         Load a notebook from storage.
@@ -176,6 +254,58 @@ class NotebookStorage:
             return notebook
         except Exception as e:
             print(f"Error loading notebook: {str(e)}")
+            return None
+        finally:
+            session.close()
+    
+    def load_notebook_from_file(self, db_path: str) -> Optional[Notebook]:
+        """
+        Load a notebook directly from a specific database file.
+        
+        Args:
+            db_path: Path to the database file
+            
+        Returns:
+            The loaded Notebook object, or None if it couldn't be loaded
+        """
+        if not os.path.exists(db_path):
+            return None
+        
+        engine = create_engine(f"sqlite:///{db_path}")
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        
+        try:
+            # Load notebook metadata
+            notebook_record = session.query(NotebookRecord).filter_by(id=1).first()
+            if notebook_record is None:
+                return None
+            
+            # Create notebook object
+            notebook = Notebook(name=notebook_record.name)
+            notebook.created_at = notebook_record.created_at
+            notebook.updated_at = notebook_record.updated_at
+            notebook.notebook_metadata = json.loads(notebook_record.notebook_metadata)
+            
+            # Load all pages
+            page_records = session.query(PageRecord).filter_by(notebook_id=1).all()
+            for page_record in page_records:
+                from src.core.page import Page
+                
+                page = Page(
+                    page_id=page_record.page_id,
+                    name=page_record.name,
+                    content=page_record.content
+                )
+                page.created_at = page_record.created_at
+                page.updated_at = page_record.updated_at
+                page.page_metadata = json.loads(page_record.page_metadata)
+                
+                notebook.pages[page.page_id] = page
+            
+            return notebook
+        except Exception as e:
+            print(f"Error loading notebook from file: {str(e)}")
             return None
         finally:
             session.close()
