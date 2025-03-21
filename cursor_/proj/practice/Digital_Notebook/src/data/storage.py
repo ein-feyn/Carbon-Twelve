@@ -70,25 +70,10 @@ class NotebookStorage:
         Set the directory where notebooks will be stored.
         
         Args:
-            directory: Path to the directory for storing notebooks
-            
-        Raises:
-            ValueError: If the directory is not valid
+            directory: Directory to use for storage
         """
-        if not directory:
-            raise ValueError("Storage directory cannot be empty")
-        
-        # If the directory doesn't exist, create it
         if not os.path.exists(directory):
-            try:
-                os.makedirs(directory, exist_ok=True)
-            except OSError as e:
-                raise ValueError(f"Could not create storage directory: {str(e)}")
-        
-        # Check if the directory is writable
-        if not os.access(directory, os.W_OK):
-            raise ValueError(f"Storage directory is not writable: {directory}")
-        
+            os.makedirs(directory, exist_ok=True)
         self.storage_dir = directory
     
     def get_storage_directory(self) -> str:
@@ -96,7 +81,7 @@ class NotebookStorage:
         Get the current storage directory.
         
         Returns:
-            The current storage directory path
+            Path to the storage directory
         """
         return self.storage_dir
     
@@ -341,3 +326,49 @@ class NotebookStorage:
             return True
         
         return False
+    
+    def transfer_notebooks(self, source_dir: str, target_dir: str) -> Dict[str, str]:
+        """
+        Transfer notebooks from one directory to another.
+        
+        Args:
+            source_dir: Source directory containing notebooks
+            target_dir: Target directory to move notebooks to
+            
+        Returns:
+            Dictionary of notebook names and their new file paths
+            
+        Raises:
+            ValueError: If source or target directory is invalid
+        """
+        if not os.path.exists(source_dir):
+            raise ValueError(f"Source directory does not exist: {source_dir}")
+        
+        if not os.path.exists(target_dir):
+            os.makedirs(target_dir, exist_ok=True)
+        
+        # Dictionary to store transferred notebook info
+        transferred_notebooks = {}
+        
+        # List all notebook files in the source directory
+        for filename in os.listdir(source_dir):
+            if filename.endswith(".db"):
+                source_path = os.path.join(source_dir, filename)
+                target_path = os.path.join(target_dir, filename)
+                
+                # Skip if the file already exists in the target directory
+                if os.path.exists(target_path):
+                    continue
+                
+                try:
+                    # Copy the file from source to target
+                    import shutil
+                    shutil.copy2(source_path, target_path)
+                    
+                    # Store the notebook name and its new path
+                    notebook_name = os.path.splitext(filename)[0]
+                    transferred_notebooks[notebook_name] = target_path
+                except Exception as e:
+                    print(f"Error transferring notebook {filename}: {str(e)}")
+        
+        return transferred_notebooks

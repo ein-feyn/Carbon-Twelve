@@ -443,6 +443,9 @@ class NotebookUI(QMainWindow):
         
         if directory:
             try:
+                # Remember the old storage directory before changing it
+                old_storage_dir = self.storage.get_storage_directory()
+                
                 # Set the new storage directory
                 self.storage.set_storage_directory(directory)
                 self.config.set_default_storage_dir(directory)
@@ -457,13 +460,40 @@ class NotebookUI(QMainWindow):
                 )
                 
                 if move_notebooks == QMessageBox.StandardButton.Yes:
-                    # This would require implementing a function to move notebooks
-                    # For now, just inform the user this isn't implemented
-                    QMessageBox.information(
-                        self,
-                        "Not Implemented",
-                        "Moving notebooks is not implemented yet. You'll need to manually copy your notebooks to the new location."
-                    )
+                    # Transfer notebooks from the old directory to the new one
+                    progress_dialog = QDialog(self)
+                    progress_dialog.setWindowTitle("Transferring Notebooks")
+                    progress_layout = QVBoxLayout(progress_dialog)
+                    progress_label = QLabel("Transferring notebooks, please wait...")
+                    progress_layout.addWidget(progress_label)
+                    progress_dialog.show()
+                    
+                    try:
+                        # Perform the transfer
+                        transferred = self.storage.transfer_notebooks(old_storage_dir, directory)
+                        progress_dialog.close()
+                        
+                        if transferred:
+                            # Format a message about transferred notebooks
+                            notebooks_str = "\n".join([f"• {name}" for name in transferred.keys()])
+                            QMessageBox.information(
+                                self,
+                                "Notebooks Transferred",
+                                f"Successfully transferred {len(transferred)} notebook(s) to the new location:\n\n{notebooks_str}"
+                            )
+                        else:
+                            QMessageBox.information(
+                                self,
+                                "No Notebooks Transferred",
+                                "No notebooks were transferred. This could be because there were no notebooks in the old location, or all notebooks already exist in the new location."
+                            )
+                    except Exception as e:
+                        progress_dialog.close()
+                        QMessageBox.critical(
+                            self,
+                            "Transfer Error",
+                            f"An error occurred while transferring notebooks: {str(e)}"
+                        )
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to set storage directory: {str(e)}")
     
