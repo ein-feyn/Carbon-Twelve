@@ -318,7 +318,7 @@ class NotebookUI(QMainWindow):
             try:
                 # Optionally prompt for a new name
                 new_name = None
-                change_name, ok = QMessageBox.question(
+                change_name = QMessageBox.question(
                     self,
                     "Change Name",
                     "Would you like to save the notebook with a different name?",
@@ -338,7 +338,7 @@ class NotebookUI(QMainWindow):
                 file_path = self.storage.save_notebook_as(self.notebook, directory, new_name)
                 
                 # Ask if user wants to set this as the default directory
-                set_default, ok = QMessageBox.question(
+                set_default = QMessageBox.question(
                     self,
                     "Set Default Directory",
                     "Would you like to set this as the default storage directory?",
@@ -348,10 +348,8 @@ class NotebookUI(QMainWindow):
                 if set_default == QMessageBox.StandardButton.Yes:
                     self.config.set_default_storage_dir(directory)
                     self.storage.set_storage_directory(directory)
-                    self.status_bar.showMessage(f"Default storage directory set to: {directory}")
                 
-                QMessageBox.information(self, "Success", f"Notebook saved to: {file_path}")
-                
+                QMessageBox.information(self, "Success", f"Notebook saved to {file_path}")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to save notebook: {str(e)}")
     
@@ -373,7 +371,7 @@ class NotebookUI(QMainWindow):
                 self.status_bar.showMessage(f"Default storage directory set to: {directory}")
                 
                 # Ask if user wants to move existing notebooks
-                move_notebooks, ok = QMessageBox.question(
+                move_notebooks = QMessageBox.question(
                     self,
                     "Move Notebooks",
                     "Would you like to move your existing notebooks to the new directory?",
